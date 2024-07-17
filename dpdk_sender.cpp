@@ -13,7 +13,7 @@
 
 constexpr uint16_t RX_RING_SIZE = 1024;
 constexpr uint16_t TX_RING_SIZE = 1024;
-constexpr uint16_t NUM_MBUFS = 2048;
+constexpr uint16_t NUM_MBUFS = 4096;
 constexpr uint16_t MBUF_CACHE_SIZE = 128;
 constexpr uint16_t BURST_SIZE = 32;
 static uint16_t message_size = 128;
@@ -150,8 +150,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    constexpr uint16_t portid = 0;
-    
+    uint16_t portid = 0;
+
     struct rte_mempool *mbuf_pool = rte_pktmbuf_pool_create("MBUF_POOL", NUM_MBUFS, MBUF_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE, rte_socket_id());
     if (mbuf_pool == nullptr) rte_exit(EXIT_FAILURE, "Cannot create mbuf pool\n");
 
@@ -174,7 +174,7 @@ int main(int argc, char *argv[]) {
 
     while (!stop) {
         std::array<rte_mbuf*, BURST_SIZE> bufs;
-        
+
         for (auto& buf : bufs) {
             buf = rte_pktmbuf_alloc(mbuf_pool);
             if (buf == nullptr) {
@@ -198,10 +198,10 @@ int main(int argc, char *argv[]) {
             global_stats.total_bytes += nb_tx * message_size;
             global_stats.packets_second += nb_tx;
             global_stats.bytes_second += nb_tx * message_size;
-
-            for (uint16_t buf = nb_tx; buf < BURST_SIZE; buf++)
-                rte_pktmbuf_free(bufs[buf]);
         }
+
+        for (uint16_t buf = nb_tx; buf < BURST_SIZE; buf++)
+                rte_pktmbuf_free(bufs[buf]);
 
         if (use_sleep) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));  // Simulate processing time

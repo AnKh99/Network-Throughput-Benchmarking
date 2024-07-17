@@ -68,12 +68,11 @@ std::string format_unit(double value) {
 }
 
 void print_stats() {
-    auto end_time = std::chrono::steady_clock::now();
-    std::chrono::duration<double> elapsed = end_time - global_stats.start_time;
-    double duration = elapsed.count();
+    double packets_per_sec = global_stats.packets_second;
+    double bytes_per_sec = global_stats.bytes_second;
 
-    double packets_per_sec = global_stats.packets_second / duration;
-    double bytes_per_sec = global_stats.bytes_second / duration;
+    global_stats.packets_second = 0;
+    global_stats.bytes_second = 0;
 
     std::cout << "\rStats: " 
               << format_unit(global_stats.total_packets.load()) << "-packets, "
@@ -159,12 +158,6 @@ void stats_thread() {
         if (std::chrono::duration_cast<std::chrono::seconds>(current_time - last_print_time).count() >= 1) {
             print_stats();
             last_print_time = current_time;
-            global_stats.packets_second = 0;
-            global_stats.bytes_second = 0;
-        }
-
-        if (use_sleep) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Периодичность обновления статистики
         }
     }
 }
