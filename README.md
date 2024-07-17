@@ -149,6 +149,36 @@ P.S. Данные для подключения к виртуальным маш
 
 2. Следуйте инструкциям в скрипте для инициализации среды DPDK и запуска тестов.
 
+### Запуск утилит
+1. Запуск `dpdk_receiver`:
+    - `--no-sleep` - optional - отключает функцию `sleep`
+    ```sh
+    sudo ./dpdk_receiver
+    ```
+2. Запуск `dpdk_sender`:
+    - `--no-sleep` - optional - отключает функцию `sleep`
+    - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=128`
+    ```sh
+    sudo ./dpdk_sender -l 0-3 -n 4 -- -p 0x1
+    ```
+3. Запуск `socket_receiver`:
+    `--no-sleep` - optional - отключает функцию `sleep`
+    ```sh
+    sudo ./socket_recevier
+    ```
+3. Запуск `socket_sender`:
+    `--no-sleep` - optional - отключает функцию `sleep`
+    - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=128`
+    ```sh
+    sudo ./socket_sender
+    ```
+3. Запуск `socket_mt_send`:
+    - `--no-sleep` - optional - отключает функцию `sleep`
+    - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=1024`
+    ```sh
+    sudo ./socket_mt_send
+    ```
+
 ## Результаты
 
 Результаты тестов будут отображены в консоли. Скрипт `benchmark.py` также собирает статистику и отображает её на экран.
