@@ -56,12 +56,8 @@ static const char *format_unit(double *value, const char **unit) {
 }
 
 std::string print_stats(void) {
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> elapsed = end_time - global_stats.start_time;
-    double duration = elapsed.count();
-
-    double packets_per_sec = global_stats.packets_second / duration;
-    double bytes_per_sec = global_stats.bytes_second / duration;
+    double packets_per_sec = global_stats.packets_second;
+    double bytes_per_sec = global_stats.bytes_second;
 
     const char *packet_unit, *byte_unit, *pps_unit, *bps_unit;
     double formatted_packets = global_stats.total_packets;
@@ -147,9 +143,7 @@ void send_packets(const char* interface, const uint8_t* dst_mac, int thread_id, 
 
 void stats_thread() {
     while (!stop) {
-        if (use_sleep) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
         std::string stats = print_stats();
         std::cout << "\r" << stats << std::flush;
         global_stats.packets_second = 0;
