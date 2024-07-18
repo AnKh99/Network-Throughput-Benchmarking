@@ -151,10 +151,22 @@ void stats_thread() {
     }
 }
 
+void parse_mac_address(const std::string &mac_str, uint8_t mac[6]) {
+    std::stringstream ss(mac_str);
+    std::string byte_str;
+    int i = 0;
+
+    while (std::getline(ss, byte_str, ':') && i < 6) {
+        mac[i++] = std::stoi(byte_str, nullptr, 16);
+    }
+}
+
 int main(int argc, char* argv[]) {
     signal(SIGINT, handle_interrupt);
 
     int buf_size = 1024;
+    uint8_t dst_mac[6] = {0x08, 0x00, 0x27, 0x60, 0xff, 0x20};
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--size" && i + 1 < argc) {
@@ -163,11 +175,12 @@ int main(int argc, char* argv[]) {
         if (arg == "--no-sleep") {
             use_sleep = false;
         }
+        if (arg == "--dst" && i + 1 < argc) {
+            parse_mac_address(argv[++i], dst_mac);
+        }
     }
 
     const char* interface = "enp0s9";
-    uint8_t dst_mac[6] = {0x08, 0x00, 0x27, 0x60, 0xff, 0x20};
-
     global_stats.start_time = std::chrono::high_resolution_clock::now();
 
     std::thread stats_thread_handle(stats_thread);
@@ -188,6 +201,9 @@ int main(int argc, char* argv[]) {
     stats_thread_handle.join();
     std::cout << std::endl;
     std::cout << "Sender stopped by user." << std::endl;
+
+    std::cout << "Total messages: " << global_stats.total_packets << std::endl;
+    std::cout << "Total bytes: " << global_stats.total_bytes << " bytes" << std::endl;
 
     return 0;
 }

@@ -19,66 +19,51 @@ constexpr uint16_t BURST_SIZE = 32;
 static uint16_t message_size = 128;
 static bool use_sleep = true;
 
-struct stats {
-    std::atomic<uint64_t> total_packets;
-    std::atomic<uint64_t> total_bytes;
-    std::atomic<uint64_t> bytes_second;
-    std::atomic<uint64_t> packets_second;
-    std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
-
-    stats() : total_packets(0), total_bytes(0), bytes_second(0), packets_second(0), start_time(std::chrono::high_resolution_clock::now()) {}
+struct Stats {
+    std::atomic<uint64_t> total_packets{0};
+    std::atomic<uint64_t> total_bytes{0};
+    std::atomic<uint64_t> bytes_second{0};
+    std::atomic<uint64_t> packets_second{0};
+    std::chrono::steady_clock::time_point start_time;
 };
 
-static stats global_stats;
-static volatile sig_atomic_t stop;
+static struct Stats global_stats;
+static std::atomic<bool> force_quit{false};;
 
-void handle_interrupt(int /*signum*/) {
-    stop = 1;
-}
-
-static const char *format_unit(double *value, const char **unit) {
-    const char *units[] = {"", "K", "M", "G", "T"};
+std::string format_unit(double value) {
+    const std::array<std::string, 5> units = {"", "K", "M", "G", "T"};
     int i = 0;
-    while (*value >= 1000.0 && i < 4) {
-        *value /= 1000.0;
+    while (value >= 1000.0 && i < 4) {
+        value /= 1000.0;
         i++;
     }
-    *unit = units[i];
-    return *unit;
-}
-
-std::string print_stats(void) {
-    double packets_per_sec = global_stats.packets_second;
-    double bytes_per_sec = global_stats.bytes_second;
-
-    const char *packet_unit, *byte_unit, *pps_unit, *bps_unit;
-    double formatted_packets = global_stats.total_packets;
-    double formatted_bytes = global_stats.total_bytes;
-    double formatted_pps = packets_per_sec;
-    double formatted_bps = bytes_per_sec;
-
-    format_unit(&formatted_packets, &packet_unit);
-    format_unit(&formatted_bytes, &byte_unit);
-    format_unit(&formatted_pps, &pps_unit);
-    format_unit(&formatted_bps, &bps_unit);
-
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2)
-        << "Stats: " << formatted_packets << " " << packet_unit << "-packets, "
-        << formatted_bytes << " " << byte_unit << "bytes, "
-        << formatted_pps << " " << pps_unit << "-packets/s, "
-        << formatted_bps << " " << bps_unit << "b/s";
-    
+    oss << std::fixed << std::setprecision(2) << value << " " << units[i];
     return oss.str();
 }
 
+void print_stats() {
+    std::cout << "\rStats: " 
+              << format_unit(global_stats.total_packets.load()) << "-packets, "
+              << format_unit(global_stats.total_bytes.load()) << "bytes, "
+              << format_unit(global_stats.packets_second.load()) << "-packets/s, "
+              << format_unit(global_stats.bytes_second.load()) << "b/s" << std::flush;
+    
+    global_stats.packets_second = 0;
+    global_stats.bytes_second = 0;
+}
+
+void signal_handler(int signum) {
+    if (signum == SIGINT || signum == SIGTERM) {
+        std::cout << "\nSignal " << signum << " received, preparing to exit..." << std::endl;
+        force_quit = true;
+    }
+}
+
 void stats_thread() {
-    while (!stop) {
+    while (!force_quit) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::string stats = print_stats();
-        std::cout << "\r" << stats << std::flush;
-        global_stats.packets_second = 0;
-        global_stats.bytes_second = 0;
+        print_stats();
     }
 }
 
@@ -140,6 +125,7 @@ int main(int argc, char *argv[]) {
     int ret = rte_eal_init(argc, argv);
     if (ret < 0) rte_exit(EXIT_FAILURE, "Error with EAL initialization\n");
 
+    std::string mac_str = "08:00:27:56:59:dd";
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--size" && i + 1 < argc) {
@@ -147,6 +133,9 @@ int main(int argc, char *argv[]) {
         }
         if (arg == "--no-sleep") {
             use_sleep = false;
+        }
+        if (arg == "--dst" && i + 1 < argc) {
+            mac_str = argv[++i];
         }
     }
 
@@ -160,19 +149,18 @@ int main(int argc, char *argv[]) {
     rte_ether_addr dst_mac;
     rte_ether_addr src_mac;
 
-    const char* mac_str = "08:00:27:56:59:dd";
-    sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
+    sscanf(mac_str.c_str(), "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",
         &dst_mac.addr_bytes[0], &dst_mac.addr_bytes[1], &dst_mac.addr_bytes[2],
         &dst_mac.addr_bytes[3], &dst_mac.addr_bytes[4], &dst_mac.addr_bytes[5]);
 
     rte_eth_macaddr_get(portid, &src_mac);
 
-    std::signal(SIGINT, handle_interrupt);
-    std::signal(SIGTERM, handle_interrupt);
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
-    std::thread stats_thread_handle(stats_thread);
+    std::thread stats(stats_thread);
 
-    while (!stop) {
+    while (!force_quit) {
         std::array<rte_mbuf*, BURST_SIZE> bufs;
 
         for (auto& buf : bufs) {
@@ -208,9 +196,12 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    stats_thread_handle.join();
+    stats.join();
     std::cout << std::endl;
     std::cout << "Sender stopped by user." << std::endl;
+
+    std::cout << "Total messages: " << global_stats.total_packets << std::endl;
+    std::cout << "Total bytes: " << global_stats.total_bytes << " bytes" << std::endl;
 
     return 0;
 }

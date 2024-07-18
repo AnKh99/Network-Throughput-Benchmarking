@@ -15,8 +15,7 @@
 #include <ifaddrs.h>
 #include <chrono>
 
-#define THREAD_COUNT 4
-
+static int thread_count = 4;
 static bool use_sleep = true;
 
 void get_mac_address(const char* ifname, uint8_t* mac) {
@@ -32,57 +31,52 @@ void get_mac_address(const char* ifname, uint8_t* mac) {
     freeifaddrs(ifap);
 }
 
-struct stats {
-    uint64_t total_packets;
-    uint64_t total_bytes;
-    std::atomic<uint64_t> bytes_second;
-    std::atomic<uint64_t> packets_second;
-    std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
-
-    stats() : total_packets(0), total_bytes(0), bytes_second(0), packets_second(0), start_time(std::chrono::high_resolution_clock::now()) {}
+struct Stats {
+    std::atomic<uint64_t> total_packets{0};
+    std::atomic<uint64_t> total_bytes{0};
+    std::atomic<uint64_t> bytes_second{0};
+    std::atomic<uint64_t> packets_second{0};
+    std::chrono::steady_clock::time_point start_time;
 };
 
-static stats global_stats;
+static struct Stats global_stats;
+static std::atomic<bool> force_quit{false};
 
-static const char *format_unit(double *value, const char **unit) {
-    const char *units[] = {"", "K", "M", "G", "T"};
+std::string format_unit(double value) {
+    const std::array<std::string, 5> units = {"", "K", "M", "G", "T"};
     int i = 0;
-    while (*value >= 1000.0 && i < 4) {
-        *value /= 1000.0;
+    while (value >= 1000.0 && i < 4) {
+        value /= 1000.0;
         i++;
     }
-    *unit = units[i];
-    return *unit;
-}
-
-std::string print_stats(void) {
-    double packets_per_sec = global_stats.packets_second;
-    double bytes_per_sec = global_stats.bytes_second;
-
-    const char *packet_unit, *byte_unit, *pps_unit, *bps_unit;
-    double formatted_packets = global_stats.total_packets;
-    double formatted_bytes = global_stats.total_bytes;
-    double formatted_pps = packets_per_sec;
-    double formatted_bps = bytes_per_sec;
-
-    format_unit(&formatted_packets, &packet_unit);
-    format_unit(&formatted_bytes, &byte_unit);
-    format_unit(&formatted_pps, &pps_unit);
-    format_unit(&formatted_bps, &bps_unit);
-
     std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2)
-        << "Stats: " << formatted_packets << " " << packet_unit << "-packets, "
-        << formatted_bytes << " " << byte_unit << "bytes, "
-        << formatted_pps << " " << pps_unit << "-packets/s, "
-        << formatted_bps << " " << bps_unit << "b/s";
-    
+    oss << std::fixed << std::setprecision(2) << value << " " << units[i];
     return oss.str();
 }
 
-volatile sig_atomic_t stop;
-void handle_interrupt(int /*signum*/) {
-    stop = 1;
+void print_stats() {
+    std::cout << "\rStats: " 
+              << format_unit(global_stats.total_packets.load()) << "-packets, "
+              << format_unit(global_stats.total_bytes.load()) << "bytes, "
+              << format_unit(global_stats.packets_second.load()) << "-packets/s, "
+              << format_unit(global_stats.bytes_second.load()) << "b/s" << std::flush;
+    
+    global_stats.packets_second = 0;
+    global_stats.bytes_second = 0;
+}
+
+void signal_handler(int signum) {
+    if (signum == SIGINT || signum == SIGTERM) {
+        std::cout << "\nSignal " << signum << " received, preparing to exit..." << std::endl;
+        force_quit = true;
+    }
+}
+
+void stats_thread() {
+    while (!force_quit) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        print_stats();
+    }
 }
 
 void send_packets(const char* interface, const uint8_t* dst_mac, int thread_id, int buf_size) {
@@ -121,7 +115,7 @@ void send_packets(const char* interface, const uint8_t* dst_mac, int thread_id, 
     memcpy(frame.data() + sizeof(struct ether_header), buffer, buf_size);
 
     // Отправка сообщений
-    while (!stop) {
+    while (!force_quit) {
         if (sendto(sockfd, frame.data(), frame.size(), 0, reinterpret_cast<struct sockaddr*>(&socket_address), sizeof(socket_address)) < 0) {
             perror("sendto failed");
             break;
@@ -141,20 +135,23 @@ void send_packets(const char* interface, const uint8_t* dst_mac, int thread_id, 
     std::cout << "Thread " << thread_id << " stopped." << std::endl;
 }
 
-void stats_thread() {
-    while (!stop) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::string stats = print_stats();
-        std::cout << "\r" << stats << std::flush;
-        global_stats.packets_second = 0;
-        global_stats.bytes_second = 0;
+void parse_mac_address(const std::string &mac_str, uint8_t mac[6]) {
+    std::stringstream ss(mac_str);
+    std::string byte_str;
+    int i = 0;
+
+    while (std::getline(ss, byte_str, ':') && i < 6) {
+        mac[i++] = std::stoi(byte_str, nullptr, 16);
     }
 }
 
 int main(int argc, char* argv[]) {
-    signal(SIGINT, handle_interrupt);
+    std::signal(SIGINT, signal_handler);
+    std::signal(SIGTERM, signal_handler);
 
     int buf_size = 1024;
+    uint8_t dst_mac[6] = {0x08, 0x00, 0x27, 0x60, 0xff, 0x20};
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--size" && i + 1 < argc) {
@@ -163,18 +160,21 @@ int main(int argc, char* argv[]) {
         if (arg == "--no-sleep") {
             use_sleep = false;
         }
+        if (arg == "--dst" && i + 1 < argc) {
+            parse_mac_address(argv[++i], dst_mac);
+        }
+        if (arg == "--j" && i + 1 < argc) {
+            thread_count = std::stoi(argv[++i]);
+        }
     }
 
     const char* interface = "enp0s9";
-    uint8_t dst_mac[6] = {0x08, 0x00, 0x27, 0x60, 0xff, 0x20};
 
-    global_stats.start_time = std::chrono::high_resolution_clock::now();
-
-    std::thread stats_thread_handle(stats_thread);
+    std::thread stats(stats_thread);
 
     // Запуск потоков
     std::vector<std::thread> threads;
-    for (int i = 0; i < THREAD_COUNT; ++i) {
+    for (int i = 0; i < thread_count; ++i) {
         threads.emplace_back(send_packets, interface, dst_mac, i, buf_size);
     }
 
@@ -185,9 +185,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    stats_thread_handle.join();
+    stats.join();
     std::cout << std::endl;
     std::cout << "Sender stopped by user." << std::endl;
+
+    std::cout << "Total messages: " << global_stats.total_packets << std::endl;
+    std::cout << "Total bytes: " << global_stats.total_bytes << " bytes" << std::endl;
 
     return 0;
 }

@@ -17,8 +17,6 @@
 
 - VirtualBox
 - Ubuntu 24.04 LTS на виртуальных машинах
-- Установленные пакеты: `build-essential`, `meson`, `ninja-build`, `python3-pyelftools`, `libnuma-dev`, `python3-paramiko`, `clang-tidy`
-- Установленный DPDK 23.11
 - Обе виртуальные машины должны быть настроены с достаточным количеством памяти (используется 8 ГБ) и CPU (используется 6 ядер CPU).
 
 ## Инструкции по сборке и запуску
@@ -28,7 +26,7 @@
 1. Установите необходимые пакеты на обеих виртуальных машинах:
     ```sh
     sudo apt update && sudo apt upgrade -y
-    sudo apt install -y build-essential meson ninja-build python3-pyelftools libnuma-dev python3-paramiko clang-tidy
+    sudo apt install -y build-essential meson ninja-build python3-pyelftools libnuma-dev python3-paramiko clang-tidy pkg-config cmake git openssh-server vim
     ```
 
 2. Установите dpdk на обеих виртуальных машинах:
@@ -153,28 +151,32 @@ P.S. Данные для подключения к виртуальным маш
 1. Запуск `dpdk_receiver`:
     - `--no-sleep` - optional - отключает функцию `sleep`
     ```sh
-    sudo ./dpdk_receiver
+    sudo ./dpdk_receiver -l 0-3 -n 4 -- -p 0x1
     ```
 2. Запуск `dpdk_sender`:
     - `--no-sleep` - optional - отключает функцию `sleep`
     - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=128`
+    - `--dst MAC_ADDR` - optional - задает mac адрес принимающего устройства
     ```sh
     sudo ./dpdk_sender -l 0-3 -n 4 -- -p 0x1
     ```
 3. Запуск `socket_receiver`:
-    `--no-sleep` - optional - отключает функцию `sleep`
+    - `--no-sleep` - optional - отключает функцию `sleep`
     ```sh
-    sudo ./socket_recevier
+    sudo ./socket_receiver
     ```
 3. Запуск `socket_sender`:
-    `--no-sleep` - optional - отключает функцию `sleep`
+    - `--no-sleep` - optional - отключает функцию `sleep`
     - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=128`
+    - `--dst MAC_ADDR` - optional - задает mac адрес принимающего устройства
     ```sh
     sudo ./socket_sender
     ```
 3. Запуск `socket_mt_send`:
     - `--no-sleep` - optional - отключает функцию `sleep`
     - `--size N` - optional - задает размер отправляемых пакетов. По умолчанию `size=1024`
+    - `--dst MAC_ADDR` - optional - задает mac адрес принимающего устройства
+    - `--j N` - optional - задает количество потоков. По умолчанию 4
     ```sh
     sudo ./socket_mt_send
     ```

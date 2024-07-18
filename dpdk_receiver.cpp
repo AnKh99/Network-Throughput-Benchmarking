@@ -68,17 +68,14 @@ std::string format_unit(double value) {
 }
 
 void print_stats() {
-    double packets_per_sec = global_stats.packets_second;
-    double bytes_per_sec = global_stats.bytes_second;
-
-    global_stats.packets_second = 0;
-    global_stats.bytes_second = 0;
-
     std::cout << "\rStats: " 
               << format_unit(global_stats.total_packets.load()) << "-packets, "
               << format_unit(global_stats.total_bytes.load()) << "bytes, "
-              << format_unit(packets_per_sec) << "-packets/s, "
-              << format_unit(bytes_per_sec) << "b/s" << std::flush;
+              << format_unit(global_stats.packets_second.load()) << "-packets/s, "
+              << format_unit(global_stats.bytes_second.load()) << "b/s" << std::flush;
+    
+    global_stats.packets_second = 0;
+    global_stats.bytes_second = 0;
 }
 
 void signal_handler(int signum) {
@@ -150,15 +147,9 @@ void receive_packets(uint16_t portid) {
 }
 
 void stats_thread() {
-    global_stats.start_time = std::chrono::steady_clock::now();
-    auto last_print_time = global_stats.start_time;
-
     while (!force_quit) {
-        auto current_time = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::seconds>(current_time - last_print_time).count() >= 1) {
-            print_stats();
-            last_print_time = current_time;
-        }
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        print_stats();
     }
 }
 
@@ -196,6 +187,9 @@ int main(int argc, char *argv[]) {
     stats.join();
 
     std::cout << "\nReceiver stopped." << std::endl;
+
+    std::cout << "Total messages: " << global_stats.total_packets << std::endl;
+    std::cout << "Total bytes: " << global_stats.total_bytes << " bytes" << std::endl;
 
     return 0;
 }
