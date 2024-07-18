@@ -75,7 +75,7 @@ std::string print_stats(void) {
         << "Stats: " << formatted_packets << " " << packet_unit << "-packets, "
         << formatted_bytes << " " << byte_unit << "bytes, "
         << formatted_pps << " " << pps_unit << "-packets/s, "
-        << formatted_bps << " " << bps_unit << "b/s";
+        << formatted_bps << " " << bps_unit << "b/s   ";
     
     return oss.str();
 }

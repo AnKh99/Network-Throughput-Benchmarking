@@ -59,7 +59,7 @@ void print_stats() {
               << format_unit(global_stats.total_packets.load()) << "-packets, "
               << format_unit(global_stats.total_bytes.load()) << "bytes, "
               << format_unit(global_stats.packets_second.load()) << "-packets/s, "
-              << format_unit(global_stats.bytes_second.load()) << "b/s" << std::flush;
+              << format_unit(global_stats.bytes_second.load()) << "b/s   " << std::flush;
     
     global_stats.packets_second = 0;
     global_stats.bytes_second = 0;
